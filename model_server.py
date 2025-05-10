@@ -4,21 +4,28 @@ import joblib
 import pandas as pd
 import numpy as np
 import logging
-
+from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 try:
     model_magistr = joblib.load('models/dec_tree_model_magistr.pkl')
     model_bak_spec = joblib.load('models/dec_tree_model_bak_spec.pkl')
+    logger.info("Модели успешно загружены")
 except Exception as e:
     logger.error(f"Ошибка загрузки моделей: {str(e)}")
     raise
-
 
 FEATURE_COLUMNS = [
     'Приоритет', 'Cумма баллов испытаний', 'БВИ', 'Балл за инд. достижения',
@@ -35,41 +42,77 @@ FEATURE_COLUMNS = [
     'Код направления 3: 4'
 ]
 
-
 class PredictionRequest(BaseModel):
     education_level: str
     data: list[dict]
 
-@app.post('/predict')
+@app.get("/")
+async def root():
+    return {
+        "message": "Student Dropout Prediction API",
+        "endpoints": {
+            "test": "GET /test",
+            "predict": "POST /predict"
+        }
+    }
+
+@app.get("/test")
+async def test_endpoint():
+    return {"status": "API работает корректно", "models_loaded": True}
+
+@app.get("/predict")
+async def predict_get():
+    return {
+        "message": "Используйте POST запрос с JSON телом",
+        "example_request": {
+            "education_level": "magistr",
+            "data": [{col: 0 for col in FEATURE_COLUMNS}]
+        }
+    }
+
+@app.post("/predict")
 async def predict(request: PredictionRequest):
     try:
-        logger.debug(f"Получен запрос: education_level={request.education_level}, строк={len(request.data)}")
+        logger.debug(f"Получен запрос: education_level={request.education_level}")
         
-     
+        if request.education_level not in ['magistr', 'bak_spec']:
+            raise HTTPException(
+                status_code=400,
+                detail="Неправильный уровень образования. Используйте 'magistr' или 'bak_spec'"
+            )
+        
         data = pd.DataFrame(request.data)
-        
+        logger.debug(f"Данные преобразованы в DataFrame, строк: {len(data)}")
         
         missing_cols = [col for col in FEATURE_COLUMNS if col not in data.columns]
         if missing_cols:
             logger.error(f"Отсутствуют столбцы: {missing_cols}")
-            raise HTTPException(status_code=400, detail=f"Отсутствуют столбцы: {missing_cols}")
-        
+            raise HTTPException(
+                status_code=400,
+                detail=f"Отсутствуют обязательные столбцы: {missing_cols}"
+            )
         
         model = model_magistr if request.education_level == 'magistr' else model_bak_spec
-        
         
         if hasattr(model, 'predict_proba'):
             predictions = model.predict_proba(data[FEATURE_COLUMNS])[:, 1]
         else:
             predictions = model.predict(data[FEATURE_COLUMNS]).astype(float)
         
-        logger.debug(f"Предсказания выполнены, длина: {len(predictions)}")
+        logger.debug(f"Предсказания сгенерированы, пример: {predictions[:5]}")
         
-        return {'predictions': predictions.tolist()}
+        return {
+            "status": "success",
+            "predictions": predictions.tolist(),
+            "count": len(predictions)
+        }
     
     except Exception as e:
-        logger.error(f"Ошибка обработки запроса: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ошибка обработки: {str(e)}")
+        logger.error(f"Ошибка обработки запроса: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка обработки: {str(e)}"
+        )
 
 if __name__ == '__main__':
     import uvicorn
