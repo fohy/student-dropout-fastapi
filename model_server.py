@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+efrom fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import joblib
 import pandas as pd
@@ -20,8 +20,8 @@ app.add_middleware(
 )
 
 try:
-    model_magistr = joblib.load('models/dec_tree_model_magistr.pkl')
-    model_bak_spec = joblib.load('models/dec_tree_model_bak_spec.pkl')
+    model_magistr = joblib.load('models/dec_tree_model_magistr_greate.pkl')
+    model_bak_spec = joblib.load('models/dec_tree_model_bak_spec_greate.pkl')
     logger.info("Модели успешно загружены")
 except Exception as e:
     logger.error(f"Ошибка загрузки моделей: {str(e)}")
